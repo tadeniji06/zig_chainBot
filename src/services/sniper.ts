@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
 import { zigchainService } from './zigchain.js';
 import { tokenMonitor, NewTokenEvent, GraduationEvent } from './tokenMonitor.js';
@@ -23,7 +24,7 @@ export interface PendingSnipe {
   result?: SnipeResult;
 }
 
-class SniperService {
+class SniperService extends EventEmitter {
   private isRunning = false;
   private pendingSnipes: Map<string, PendingSnipe> = new Map();
 
@@ -182,6 +183,11 @@ class SniperService {
         tokenDenom,
         txHash: result.transactionHash,
         success: result.code === 0,
+      });
+
+      this.emit('snipeResult', {
+        userId,
+        result: pending.result
       });
 
       return pending.result;

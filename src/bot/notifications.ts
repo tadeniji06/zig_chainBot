@@ -1,7 +1,9 @@
 import { Bot } from 'grammy';
+import { tokenMap } from '../utils/tokenMap.js';
 import { userRepository } from '../database/repositories/userRepository.js';
 // import { walletRepository } from '../database/repositories/walletRepository.js';
 import { tokenMonitor, NewTokenEvent, GraduationEvent } from '../services/tokenMonitor.js';
+import { sniperService } from '../services/sniper.js';
 import { messages } from './messages.js';
 import { keyboards } from './keyboards.js';
 import { logger } from '../utils/logger.js';
@@ -16,6 +18,10 @@ export function setupNotifications(bot: Bot): void {
     await notifyGraduation(bot, event);
   });
 
+  sniperService.on('snipeResult', async ({ userId, result }) => {
+     await sendSnipeResult(bot, userId, result);
+  });
+
   logger.info('Notifications setup complete');
 }
 
@@ -27,9 +33,10 @@ async function notifyNewToken(bot: Bot, event: NewTokenEvent): Promise<void> {
     if (!settings?.auto_buy_new_tokens) continue;
 
     try {
+      const tokenId = tokenMap.getId(event.token.denom);
       const kb = new InlineKeyboard()
-        .text('🛒 Buy Now', `quick_buy_${encodeURIComponent(event.token.denom)}`)
-        .text('👀 Watch', `watch_${encodeURIComponent(event.token.denom)}`);
+        .text('🛒 Buy Now', `quick_buy_${tokenId}`)
+        .text('👀 Watch', `watch_${tokenId}`);
 
       await bot.api.sendMessage(
         user.telegram_id,

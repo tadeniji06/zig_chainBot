@@ -78,6 +78,8 @@ export async function handleHistory(ctx: Context): Promise<void> {
   );
 }
 
+
+
 export async function handleQuickBuy(ctx: Context): Promise<void> {
   await ctx.editMessageText(
     '🚀 *Quick Buy*\n\nPaste a token address or denom to buy:\n\nExample: `coin.zig1xxx.tokenname`',
@@ -86,4 +88,39 @@ export async function handleQuickBuy(ctx: Context): Promise<void> {
       reply_markup: keyboards.cancel(),
     }
   );
+}
+
+import { tokenMap } from '../../utils/tokenMap.js';
+import { sniperService } from '../../services/sniper.js';
+
+export async function handleQuickBuyToken(ctx: Context, tokenId: number): Promise<void> {
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+
+  const denom = tokenMap.getDenom(tokenId);
+  if (!denom) {
+    await ctx.answerCallbackQuery({ text: '❌ Token not found or expired', show_alert: true });
+    return;
+  }
+
+  await ctx.answerCallbackQuery({ text: '⏳ Buying token...' });
+
+  // Get user settings for buy amount
+  const settings = userRepository.getSnipeSettings(telegramId);
+  if (!settings) {
+    await ctx.reply('❌ Please configure your settings first.');
+    return;
+  }
+
+  const result = await sniperService.manualBuy(telegramId, denom, settings.buy_amount_uzig);
+
+  if (result.success) {
+    await ctx.reply(`✅ *Buy Successful!*\n\n*Token:* \`${denom}\`\n*Amount:* ${settings.buy_amount_uzig} uZIG\n*Tx Hash:* \`${result.txHash}\``, {
+      parse_mode: 'MarkdownV2',
+    });
+  } else {
+    await ctx.reply(`❌ *Buy Failed*\n\nError: ${result.error}`, {
+      parse_mode: 'MarkdownV2',
+    });
+  }
 }

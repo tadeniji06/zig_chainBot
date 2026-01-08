@@ -37,6 +37,7 @@ import {
   handleTokensList,
   handleHistory,
   handleQuickBuy,
+  handleQuickBuyToken,
 } from './handlers/dashboard.js';
 import {
   handleHoldingsMenu,
@@ -134,6 +135,13 @@ export function createBot(): Bot {
   bot.callbackQuery('history', handleHistory);
   bot.callbackQuery('quick_buy', handleQuickBuy);
   bot.callbackQuery('holdings', handleHoldingsMenu);
+
+  bot.callbackQuery(/^quick_buy_(\d+)$/, async (ctx) => {
+    const tokenId = parseInt(ctx.match[1], 10);
+    await handleQuickBuyToken(ctx, tokenId);
+  });
+  
+  bot.callbackQuery('quick_buy', handleQuickBuy);
 
   bot.callbackQuery(/^sell_token_(.+)$/, async (ctx) => {
     const tokenDenom = decodeURIComponent(ctx.match[1]);
