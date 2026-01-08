@@ -1,0 +1,72 @@
+{
+  "services": [
+    {
+      "type": "worker",
+      "name": "zigchain-sniper-bot",
+      "runtime": "node",
+      "plan": "starter",
+      "region": "oregon",
+      "buildCommand": "npm install && npm run build",
+      "startCommand": "npm start",
+      "envVars": [
+        {
+          "key": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "key": "TELEGRAM_BOT_TOKEN",
+          "sync": false
+        },
+        {
+          "key": "ENCRYPTION_KEY",
+          "sync": false
+        },
+        {
+          "key": "ZIGCHAIN_RPC_URL",
+          "value": "https://public-zigchain-rpc.numia.xyz"
+        },
+        {
+          "key": "ZIGCHAIN_API_URL",
+          "value": "https://public-zigchain-lcd.numia.xyz"
+        },
+        {
+          "key": "CHAIN_ID",
+          "value": "zigchain-1"
+        },
+        {
+          "key": "BECH32_PREFIX",
+          "value": "zig"
+        },
+        {
+          "key": "GAS_PRICE",
+          "value": "0.0025uzig"
+        },
+        {
+          "key": "BUY_PERCENTAGE",
+          "value": "80"
+        },
+        {
+          "key": "SLIPPAGE_TOLERANCE",
+          "value": "5"
+        },
+        {
+          "key": "NEW_TOKEN_POLL_INTERVAL",
+          "value": "1000"
+        },
+        {
+          "key": "GRADUATION_POLL_INTERVAL",
+          "value": "2000"
+        },
+        {
+          "key": "DATABASE_PATH",
+          "value": "/opt/render/project/data/bot.db"
+        }
+      ],
+      "disk": {
+        "name": "bot-data",
+        "mountPath": "/opt/render/project/data",
+        "sizeGB": 1
+      }
+    }
+  ]
+}
