@@ -178,7 +178,7 @@ export class ZigChainService {
   async queryNewTokens(fromHeight?: number): Promise<TokenInfo[]> {
     try {
       const response = await fetch(
-        `${config.zigchain.apiUrl}/cosmos/bank/v1beta1/supply?pagination.limit=200`,
+        `${config.zigchain.apiUrl}/cosmos/bank/v1beta1/supply?pagination.limit=5000`,
         { signal: AbortSignal.timeout(10000) } // 10 second timeout
       );
       
