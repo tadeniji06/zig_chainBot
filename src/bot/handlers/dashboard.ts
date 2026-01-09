@@ -162,20 +162,20 @@ export async function handleQuickBuyInput(
 	const denom = text.trim();
 	if (!denom.startsWith("coin.") && !denom.startsWith("factory/")) {
 		await ctx.reply(
-			"❌ Invalid token format. Must start with `coin.` or `factory/`.",
+			"❌ Invalid token format\\. Must start with `coin\\.` or `factory/`\\.",
 			{ parse_mode: "MarkdownV2" }
 		);
 		return;
 	}
 
-	await ctx.reply(`⏳ Buying token \`${denom}\`...`, {
+	await ctx.reply(`⏳ Buying token \`${denom}\`\\.\\.\\.`, {
 		parse_mode: "MarkdownV2",
 	});
 
 	// Get user settings for buy amount
 	const settings = userRepository.getSnipeSettings(telegramId);
 	if (!settings) {
-		await ctx.reply("❌ Please configure your settings first.");
+		await ctx.reply("❌ Please configure your settings first\\.");
 		return;
 	}
 
@@ -187,13 +187,13 @@ export async function handleQuickBuyInput(
 
 	if (result.success) {
 		await ctx.reply(
-			`✅ *Buy Successful!*\n\n*Token:* \`${denom}\`\n*Amount:* ${settings.buy_amount_uzig} uZIG\n*Tx Hash:* \`${result.txHash}\``,
+			`✅ *Buy Successful\\!*\n\n*Token:* \`${denom}\`\n*Amount:* ${settings.buy_amount_uzig} uZIG\n*Tx Hash:* \`${result.txHash}\``,
 			{
 				parse_mode: "MarkdownV2",
 			}
 		);
 	} else {
-		await ctx.reply(`❌ *Buy Failed*\n\nError: ${result.error}`, {
+		await ctx.reply(`❌ *Buy Failed*\n\nError: \`${result.error}\``, {
 			parse_mode: "MarkdownV2",
 		});
 	}
