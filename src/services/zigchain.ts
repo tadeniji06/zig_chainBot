@@ -216,7 +216,7 @@ export class ZigChainService {
   async queryPools(): Promise<PoolInfo[]> {
     try {
       const response = await fetch(
-        `${config.zigchain.apiUrl}/cosmos/bank/v1beta1/supply?pagination.limit=500`,
+        `${config.zigchain.apiUrl}/cosmos/bank/v1beta1/supply?pagination.limit=5000`,
         { signal: AbortSignal.timeout(10000) } // 10 second timeout
       );
       
@@ -252,7 +252,8 @@ export class ZigChainService {
 
   async getPoolByToken(tokenDenom: string): Promise<PoolInfo | null> {
     const pools = await this.queryPools();
-    return pools.find(p => p.baseDenom === tokenDenom || p.quoteDenom === tokenDenom) || null;
+    // Use loose matching because poolId (LP token) likely contains the token denom
+    return pools.find(p => p.poolId.includes(tokenDenom)) || null;
   }
 
   subscribeToNewBlocks(callback: (height: number) => void): () => void {

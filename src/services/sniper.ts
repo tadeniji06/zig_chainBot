@@ -58,12 +58,27 @@ class SniperService extends EventEmitter {
       name: event.token.name 
     });
 
-    // Attempt to find a pool for this token immediately
-    const pool = await zigchainService.getPoolByToken(event.token.denom);
+    // Poll for liquidity pool with a timeout
+    let pool = await zigchainService.getPoolByToken(event.token.denom);
+    let attempts = 0;
+    const maxAttempts = 30; // 30 seconds (1s interval)
+
     if (!pool) {
-      logger.warn('No liquidity pool found for new token yet', { denom: event.token.denom });
-      return;
+      logger.info('Waiting for liquidity pool...', { denom: event.token.denom });
+      
+      while (!pool && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        pool = await zigchainService.getPoolByToken(event.token.denom);
+        attempts++;
+      }
     }
+
+    if (!pool) {
+      logger.warn('No liquidity pool found after waiting', { denom: event.token.denom });
+      return; // Fallback to graduation monitor (which pollForGraduations handles)
+    }
+
+    logger.info('Liquidity pool found!', { denom: event.token.denom, poolId: pool.poolId });
 
     const autoSnipeUsers = userRepository.getAllAutoSnipeUsers();
 
