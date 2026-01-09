@@ -61,6 +61,16 @@ async function main(): Promise<void> {
         logger.info(`📡 Monitoring ZigChain at ${config.zigchain.rpcUrl}`);
       },
     });
+
+    // Start a dummy HTTP server for Railway health checks
+    const port = process.env.PORT || 3000;
+    const http = await import('http');
+    http.createServer((req, res) => {
+      res.writeHead(200);
+      res.end('Bot is running!');
+    }).listen(port, () => {
+      logger.info(`Health check server listening on port ${port}`);
+    });
   } catch (error) {
     logger.error('Failed to start bot', { error });
     process.exit(1);
