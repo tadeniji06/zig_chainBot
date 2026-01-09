@@ -2,11 +2,13 @@ import {
 	DirectSecp256k1HdWallet,
 	DirectSecp256k1Wallet,
 } from "@cosmjs/proto-signing";
+import { Secp256k1HdWallet } from "@cosmjs/amino";
 import {
 	SigningStargateClient,
 	StargateClient,
 	GasPrice,
 	DeliverTxResponse,
+	AminoTypes,
 } from "@cosmjs/stargate";
 import { Tendermint37Client } from "@cosmjs/tendermint-rpc";
 import { fromHex, toHex } from "@cosmjs/encoding";
@@ -136,16 +138,62 @@ export class ZigChainService {
 	async getSigningClient(
 		mnemonic: string
 	): Promise<SigningStargateClient> {
-		const wallet = await DirectSecp256k1HdWallet.fromMnemonic(
-			mnemonic,
-			{ prefix: config.zigchain.prefix }
-		);
+		// Use Amino wallet for safer JSON-based signing (bypassing proto field number guessing)
+		const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
+			prefix: config.zigchain.prefix,
+		});
 		const gasPrice = GasPrice.fromString(config.zigchain.gasPrice);
+
+		const customAminoTypes = new AminoTypes({
+			"/zigchain.dex.MsgSwapExactIn": {
+				aminoType: "zigchain/dex/MsgSwapExactIn",
+				toAmino: ({ sender, poolId, tokenIn, minTokenOut }: any) => ({
+					sender,
+					pool_id: poolId,
+					token_in: tokenIn,
+					min_token_out: minTokenOut,
+				}),
+				fromAmino: ({
+					sender,
+					pool_id,
+					token_in,
+					min_token_out,
+				}: any) => ({
+					sender,
+					poolId: pool_id,
+					tokenIn: token_in,
+					minTokenOut: min_token_out,
+				}),
+			},
+			"/zigchain.dex.MsgSwapExactOut": {
+				aminoType: "zigchain/dex/MsgSwapExactOut",
+				toAmino: ({ sender, poolId, tokenOut, maxTokenIn }: any) => ({
+					sender,
+					pool_id: poolId,
+					token_out: tokenOut,
+					max_token_in: maxTokenIn,
+				}),
+				fromAmino: ({
+					sender,
+					pool_id,
+					token_out,
+					max_token_in,
+				}: any) => ({
+					sender,
+					poolId: pool_id,
+					tokenOut: token_out,
+					maxTokenIn: max_token_in,
+				}),
+			},
+		});
 
 		return SigningStargateClient.connectWithSigner(
 			config.zigchain.rpcUrl,
 			wallet,
-			{ gasPrice }
+			{
+				gasPrice,
+				aminoTypes: customAminoTypes,
+			}
 		);
 	}
 
@@ -155,10 +203,9 @@ export class ZigChainService {
 		tokenIn: { denom: string; amount: string },
 		minTokenOut: string
 	): Promise<DeliverTxResponse> {
-		const wallet = await DirectSecp256k1HdWallet.fromMnemonic(
-			mnemonic,
-			{ prefix: config.zigchain.prefix }
-		);
+		const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
+			prefix: config.zigchain.prefix,
+		});
 		const [account] = await wallet.getAccounts();
 		const client = await this.getSigningClient(mnemonic);
 
@@ -189,10 +236,9 @@ export class ZigChainService {
 		tokenOut: { denom: string; amount: string },
 		maxTokenIn: string
 	): Promise<DeliverTxResponse> {
-		const wallet = await DirectSecp256k1HdWallet.fromMnemonic(
-			mnemonic,
-			{ prefix: config.zigchain.prefix }
-		);
+		const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
+			prefix: config.zigchain.prefix,
+		});
 		const [account] = await wallet.getAccounts();
 		const client = await this.getSigningClient(mnemonic);
 
