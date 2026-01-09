@@ -159,7 +159,7 @@ export async function handleQuickBuyInput(
 	clearUserState(telegramId);
 
 	// Simple validation: check if it looks like a denom or address
-	const denom = text.trim();
+	const denom = text.replace(/\s/g, ""); // Remove all whitespace (newlines, spaces)
 	if (!denom.startsWith("coin.") && !denom.startsWith("factory/")) {
 		await ctx.reply(
 			"❌ Invalid token format\\. Must start with `coin\\.` or `factory/`\\.",
