@@ -207,8 +207,26 @@ export class ZigChainService {
 	}
 
 	async getPairContract(tokenAddress: string): Promise<string> {
-		// For now, use the token address directly as many meme tokens have built-in swap
-		// If that fails, we'll fall back to the router
+		// If the tokenAddress is actually a native denom (e.g. coin.zig1...), extract the contract address
+		// Format: coin.{address}.{symbol}
+		if (
+			tokenAddress.startsWith("coin.") &&
+			tokenAddress.includes(".")
+		) {
+			const parts = tokenAddress.split(".");
+			if (parts.length >= 2) {
+				const extracted = parts[1];
+				logger.info(
+					"[ZigChain] Extracted contract address from full denom",
+					{
+						original: tokenAddress,
+						extracted,
+					}
+				);
+				return extracted;
+			}
+		}
+
 		logger.info("[ZigChain] Using token address as swap contract", {
 			tokenAddress,
 		});
