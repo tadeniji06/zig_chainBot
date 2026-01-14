@@ -66,38 +66,8 @@ class SniperService extends EventEmitter {
 			name: event.token.name,
 		});
 
-		// Poll for liquidity pool with a timeout
-		let pool = await zigchainService.getPoolByToken(
-			event.token.denom
-		);
-		let attempts = 0;
-		const maxAttempts = 30; // 30 seconds (1s interval)
-
-		if (!pool) {
-			logger.info("Waiting for liquidity pool...", {
-				denom: event.token.denom,
-			});
-
-			while (!pool && attempts < maxAttempts) {
-				await new Promise((resolve) => setTimeout(resolve, 1000));
-				pool = await zigchainService.getPoolByToken(
-					event.token.denom
-				);
-				attempts++;
-			}
-		}
-
-		if (!pool) {
-			logger.warn("No liquidity pool found after waiting", {
-				denom: event.token.denom,
-			});
-			return; // Fallback to graduation monitor (which pollForGraduations handles)
-		}
-
-		logger.info("Liquidity pool found!", {
-			denom: event.token.denom,
-			poolId: pool.poolId,
-		});
+		// For bonding curve tokens, we don't need to wait for a pool!
+		// The token contract itself is the trading venue.
 
 		const autoSnipeUsers = userRepository.getAllAutoSnipeUsers();
 
@@ -112,11 +82,10 @@ class SniperService extends EventEmitter {
 				tokenDenom: event.token.denom,
 			});
 
-			// Execute the snipe
+			// Execute the snipe immediately using contract swap
 			await this.executeSnipe(
 				user.telegram_id,
 				event.token.denom,
-				pool.poolId,
 				settings.buy_amount_uzig
 			);
 		}
@@ -141,7 +110,6 @@ class SniperService extends EventEmitter {
 			await this.executeSnipe(
 				user.telegram_id,
 				event.token.denom,
-				event.pool.poolId,
 				settings.buy_amount_uzig
 			);
 		}
@@ -150,7 +118,6 @@ class SniperService extends EventEmitter {
 	async executeSnipe(
 		userId: number,
 		tokenDenom: string,
-		poolId: string,
 		buyAmount: string
 	): Promise<SnipeResult> {
 		const snipeKey = `${userId}:${tokenDenom}`;
@@ -167,7 +134,7 @@ class SniperService extends EventEmitter {
 		const pending: PendingSnipe = {
 			userId,
 			tokenDenom,
-			poolId,
+			poolId: "contract", // Placeholder
 			status: "pending",
 		};
 		this.pendingSnipes.set(snipeKey, pending);
@@ -191,36 +158,34 @@ class SniperService extends EventEmitter {
 			);
 
 			if (BigInt(balance) === BigInt(0)) {
-				throw new Error("Insufficient balance");
+				throw new Error("Insufficient balance: Wallet is empty");
 			}
 
-			// const buyAmount = zigchainService.calculateBuyAmount(balance, buyPercentage);
+			// Check if balance covers buy amount + estimated gas (e.g. 5000 uzig)
+			// This prevents vague transaction failures later
+			const estimatedGas = BigInt(5000);
+			const requiredAmount = BigInt(buyAmount) + estimatedGas;
 
-			const slippageMultiplier =
-				(100 - config.sniping.slippageTolerance) / 100;
-			// Calculate minOutput: current approach assumes 1:1 price or just setting it for safety.
-			// Since we don't know the exact price without querying the pool first, standard "snipe" often accepts high slippage.
-			// However, to respect the setting, we could query the pool price.
-			// For now, if the user requested 99% slippage, '1' is effectively correct.
-			// If they requested 5%, we should calculate it.
-			// But adding a pool query here adds latency.
-			// Let's stick to '1' for speed as requested ("efficiently"), but log the tradeoff.
-			const minOutput = "1";
+			if (BigInt(balance) < requiredAmount) {
+				throw new Error(
+					`Insufficient balance. Have: ${balance} uzig, Need: ${requiredAmount} uzig (Buy: ${buyAmount} + Gas: ${estimatedGas})`
+				);
+			}
 
 			logger.info("Executing snipe", {
 				userId,
 				tokenDenom,
-				poolId,
 				buyAmount,
 				walletAddress: wallet.address,
-				slippage: "Max (Speed prioritized)",
+				method: "swapViaContract",
 			});
 
-			const result = await zigchainService.swapExactIn(
+			// Use the new robust swapViaContract method
+			// This handles both Bonding Curve (New Tokens) and DEX (Graduated Tokens)
+			const result = await zigchainService.swapViaContract(
 				mnemonic,
-				poolId,
-				{ denom: config.zigchain.denom, amount: buyAmount },
-				minOutput
+				tokenDenom,
+				{ denom: config.zigchain.denom, amount: buyAmount }
 			);
 
 			pending.status = "completed";
