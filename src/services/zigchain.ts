@@ -1,14 +1,16 @@
 import {
 	DirectSecp256k1HdWallet,
 	DirectSecp256k1Wallet,
+	Registry,
 } from "@cosmjs/proto-signing";
-import { Secp256k1HdWallet } from "@cosmjs/amino";
+import { Secp256k1HdWallet, Secp256k1Wallet } from "@cosmjs/amino";
 import {
 	SigningStargateClient,
 	StargateClient,
 	GasPrice,
 	DeliverTxResponse,
 	AminoTypes,
+	defaultRegistryTypes,
 } from "@cosmjs/stargate";
 import { Tendermint37Client } from "@cosmjs/tendermint-rpc";
 import { fromHex, toHex } from "@cosmjs/encoding";
@@ -135,16 +137,49 @@ export class ZigChainService {
 		return balance.amount;
 	}
 
+	private async getSigner(mnemonicOrKey: string) {
+		// Check if input is a mnemonic (contains spaces)
+		if (mnemonicOrKey.includes(" ")) {
+			return DirectSecp256k1HdWallet.fromMnemonic(mnemonicOrKey, {
+				prefix: config.zigchain.prefix,
+			});
+		}
+
+		// Otherwise assume it's a private key - use Direct wallet for Protobuf signing
+		const privateKey = fromHex(
+			mnemonicOrKey.startsWith("0x")
+				? mnemonicOrKey.slice(2)
+				: mnemonicOrKey
+		);
+		return DirectSecp256k1Wallet.fromKey(
+			privateKey,
+			config.zigchain.prefix
+		);
+	}
+
 	async getSigningClient(
 		mnemonic: string
 	): Promise<SigningStargateClient> {
 		// Use Amino wallet for safer JSON-based signing (bypassing proto field number guessing)
-		const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
-			prefix: config.zigchain.prefix,
-		});
+		const wallet = await this.getSigner(mnemonic);
 		const gasPrice = GasPrice.fromString(config.zigchain.gasPrice);
 
 		const customAminoTypes = new AminoTypes({
+			"/cosmwasm.wasm.v1.MsgExecuteContract": {
+				aminoType: "wasm/MsgExecuteContract",
+				toAmino: ({ sender, contract, msg, funds }: any) => ({
+					sender,
+					contract,
+					msg,
+					funds,
+				}),
+				fromAmino: ({ sender, contract, msg, funds }: any) => ({
+					sender,
+					contract,
+					msg,
+					funds,
+				}),
+			},
 			"/zigchain.dex.MsgSwapExactIn": {
 				aminoType: "zigchain/dex/MsgSwapExactIn",
 				toAmino: ({ sender, poolId, tokenIn, minTokenOut }: any) => ({
@@ -187,14 +222,271 @@ export class ZigChainService {
 			},
 		});
 
+		// Create registry with ZigChain DEX messages from the SDK
+		const { zigchain } = await import("@zigchain/zigchainjs");
+		const { MsgExecuteContract } = await import(
+			"cosmjs-types/cosmwasm/wasm/v1/tx"
+		);
+
+		const registry = new Registry([
+			...defaultRegistryTypes,
+			["/cosmwasm.wasm.v1.MsgExecuteContract", MsgExecuteContract],
+			[
+				"/zigchain.dex.MsgSwapExactIn",
+				zigchain.dex.MsgSwapExactIn as any,
+			],
+			[
+				"/zigchain.dex.MsgSwapExactOut",
+				zigchain.dex.MsgSwapExactOut as any,
+			],
+		]);
+
 		return SigningStargateClient.connectWithSigner(
 			config.zigchain.rpcUrl,
 			wallet,
 			{
 				gasPrice,
 				aminoTypes: customAminoTypes,
+				registry,
 			}
 		);
+	}
+
+	async getPairContract(tokenAddress: string): Promise<string> {
+		// For now, use the token address directly as many meme tokens have built-in swap
+		// If that fails, we'll fall back to the router
+		logger.info("[ZigChain] Using token address as swap contract", {
+			tokenAddress,
+		});
+
+		return tokenAddress;
+	}
+
+	async swapViaContract(
+		mnemonicOrKey: string,
+		tokenOut: string,
+		tokenIn: { denom: string; amount: string }
+	): Promise<DeliverTxResponse> {
+		const wallet = await this.getSigner(mnemonicOrKey);
+		const [account] = await wallet.getAccounts();
+
+		logger.info("[ZigChain] Wallet derived address", {
+			address: account.address,
+			pubkey: toHex(account.pubkey),
+		});
+
+		const client = await this.getSigningClient(mnemonicOrKey);
+
+		// Try bonding curve first
+		try {
+			const contractAddress = await this.getPairContract(tokenOut);
+
+			// CosmWasm message for meme tokens with bonding curve
+			const msg = {
+				typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+				value: {
+					sender: account.address,
+					contract: contractAddress,
+					msg: Buffer.from(
+						JSON.stringify({
+							buy_token: {}, // Bonding curve tokens use buy_token
+						})
+					),
+					funds: [tokenIn],
+				},
+			};
+
+			const accountOnChain = await client.getAccount(account.address);
+			logger.info("[ZigChain] Account info", {
+				address: account.address,
+				accountNumber: accountOnChain?.accountNumber,
+				sequence: accountOnChain?.sequence,
+			});
+
+			logger.info(
+				"[ZigChain] Broadcasting bonding curve buy transaction"
+			);
+
+			const result = await client.signAndBroadcast(
+				account.address,
+				[msg],
+				"auto",
+				"ZigChain Sniper Bot - Bonding Curve Buy"
+			);
+
+			logger.info("[ZigChain] Swap successful", {
+				txHash: result.transactionHash,
+				code: result.code,
+				height: result.height,
+			});
+
+			if (result.code !== 0) {
+				throw new Error(
+					`Transaction failed with code ${result.code}: ${result.rawLog}`
+				);
+			}
+
+			return result;
+		} catch (error) {
+			const errorMsg =
+				error instanceof Error ? error.message : String(error);
+
+			// If trading is paused or no contract, try DEX swap
+			if (
+				errorMsg.includes("Trading is paused") ||
+				errorMsg.includes("no such contract")
+			) {
+				logger.info(
+					"[ZigChain] Bonding curve failed, trying DEX swap",
+					{
+						reason: errorMsg.includes("Trading is paused")
+							? "graduated"
+							: "not a bonding curve token",
+					}
+				);
+
+				// Query OroSwap factory for the pair contract
+				const OROSWAP_FACTORY =
+					"zig1xx3aupmgv3ce537c0yce8zzd3sz567syaltr2tdehu3y803yz6gsc6tz85";
+
+				try {
+					// We need to find the pair that contains our token address in its native denom
+					// Graduated tokens become native tokens: coin.{contract_address}.{symbol}
+					let pairContract: string | undefined;
+					let targetDenom: string | undefined;
+					let startAfter: any = undefined;
+					const LIMIT = 30;
+
+					// Search through pairs (pagination)
+					for (let i = 0; i < 10; i++) {
+						// Max 10 pages (~300 pairs) to prevent infinite loop
+						const queryMsg: any = {
+							pairs: { limit: LIMIT },
+						};
+						if (startAfter) {
+							queryMsg.pairs.start_after = startAfter;
+						}
+
+						const response = await fetch(
+							`${
+								config.zigchain.apiUrl
+							}/cosmwasm/wasm/v1/contract/${OROSWAP_FACTORY}/smart/${Buffer.from(
+								JSON.stringify(queryMsg)
+							).toString("base64")}`,
+							{ signal: AbortSignal.timeout(10000) }
+						);
+
+						if (!response.ok) {
+							break;
+						}
+
+						const data = (await response.json()) as any;
+						const pairs = data.data.pairs;
+
+						if (!pairs || pairs.length === 0) break;
+
+						// Find pair containing our token address
+						const target = pairs.find((p: any) => {
+							return p.asset_infos.some(
+								(a: any) =>
+									a.native_token &&
+									a.native_token.denom.includes(tokenOut)
+							);
+						});
+
+						if (target) {
+							pairContract = target.contract_addr;
+							targetDenom = target.asset_infos.find((a: any) =>
+								a.native_token.denom.includes(tokenOut)
+							).native_token.denom;
+							logger.info("[ZigChain] Found graduated token pair", {
+								token: tokenOut,
+								pairContract,
+								nativeDenom: targetDenom,
+							});
+							break;
+						}
+
+						// Prepare next page
+						startAfter = pairs[pairs.length - 1].asset_infos;
+					}
+
+					if (!pairContract || !targetDenom) {
+						throw new Error(
+							"Could not find DEX pair for graduated token"
+						);
+					}
+
+					// Swap on the specific pair contract
+					const dexMsg = {
+						typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+						value: {
+							sender: account.address,
+							contract: pairContract,
+							msg: Buffer.from(
+								JSON.stringify({
+									swap: {
+										offer_asset: {
+											info: {
+												native_token: {
+													denom: tokenIn.denom,
+												},
+											},
+											amount: tokenIn.amount,
+										},
+										ask_asset_info: {
+											native_token: {
+												denom: targetDenom,
+											},
+										},
+										max_spread: "0.5", // 50% max spread
+									},
+								})
+							),
+							funds: [tokenIn],
+						},
+					};
+
+					logger.info("[ZigChain] Broadcasting DEX swap transaction");
+
+					const result = await client.signAndBroadcast(
+						account.address,
+						[dexMsg],
+						"auto",
+						"ZigChain Sniper Bot - DEX Swap"
+					);
+
+					logger.info("[ZigChain] DEX swap successful", {
+						txHash: result.transactionHash,
+						code: result.code,
+						height: result.height,
+					});
+
+					if (result.code !== 0) {
+						throw new Error(
+							`DEX swap failed with code ${result.code}: ${result.rawLog}`
+						);
+					}
+
+					return result;
+				} catch (dexError) {
+					const dexErrorMsg =
+						dexError instanceof Error
+							? dexError.message
+							: String(dexError);
+					logger.error("[ZigChain] DEX swap also failed", {
+						error: dexErrorMsg,
+						tokenOut,
+					});
+					throw new Error(
+						`Both bonding curve and DEX swap failed. Token may not be tradable. Bonding curve error: ${errorMsg}. DEX error: ${dexErrorMsg}`
+					);
+				}
+			}
+
+			// If it's a different error, throw it
+			throw error;
+		}
 	}
 
 	async swapExactIn(
@@ -203,19 +495,20 @@ export class ZigChainService {
 		tokenIn: { denom: string; amount: string },
 		minTokenOut: string
 	): Promise<DeliverTxResponse> {
-		const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
-			prefix: config.zigchain.prefix,
-		});
+		const wallet = await this.getSigner(mnemonic);
 		const [account] = await wallet.getAccounts();
 		const client = await this.getSigningClient(mnemonic);
 
 		const msg = {
 			typeUrl: "/zigchain.dex.MsgSwapExactIn",
 			value: {
-				sender: account.address,
+				signer: account.address,
 				poolId: poolId,
-				tokenIn: tokenIn,
-				minTokenOut: minTokenOut,
+				incoming: tokenIn,
+				outgoingMin: {
+					denom: poolId,
+					amount: minTokenOut,
+				},
 			},
 		};
 
@@ -378,18 +671,10 @@ export class ZigChainService {
 			samplePools: pools.slice(0, 3).map((p) => p.poolId),
 		});
 
-		// 2. FALLBACK: Assume the Token Denom IS the Pool ID (Bonding Curve / Single Asset Pool)
-		// This allows the bot to attempt the buy even if we can't find an "LPToken"
-		logger.info("Using Token Denom as Pool ID fallback", {
-			tokenDenom,
-		});
-		return {
-			poolId: tokenDenom,
-			baseDenom: tokenDenom,
-			quoteDenom: "uzig", // Assumption
-			baseReserve: "0",
-			quoteReserve: "0",
-		};
+		// No pool found - throw error
+		throw new Error(
+			`No liquidity pool found for token ${tokenDenom}. This token may not have a pool yet on ZigChain DEX. Please verify the token has liquidity on https://zigscan.org`
+		);
 	}
 
 	subscribeToNewBlocks(

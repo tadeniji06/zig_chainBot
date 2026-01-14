@@ -43,6 +43,7 @@ import {
 	handleQuickBuy,
 	handleQuickBuyToken,
 	handleQuickBuyInput,
+	handleQuickBuyAmountInput,
 } from "./handlers/dashboard.js";
 import {
 	handleHoldingsMenu,
@@ -199,6 +200,9 @@ export function createBot(): Bot {
 				break;
 			case "quick_buy_input":
 				await handleQuickBuyInput(ctx, text);
+				break;
+			case "quick_buy_amount":
+				await handleQuickBuyAmountInput(ctx, text, state.data);
 				break;
 			default:
 				clearUserState(telegramId);

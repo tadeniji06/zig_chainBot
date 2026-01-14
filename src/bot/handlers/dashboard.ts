@@ -93,7 +93,7 @@ export async function handleQuickBuy(ctx: Context): Promise<void> {
 	setUserState(telegramId, { action: "quick_buy_input" });
 
 	await ctx.editMessageText(
-		"🚀 *Quick Buy*\n\nPaste a token address or denom to buy:\n\nExample: `coin.zig1xxx.tokenname`",
+		"🚀 *Quick Buy*\\n\\nPaste the token contract address \\(bare format\\):\\n\\n*Example:*\\n`zig15d0zmcmlmycvywzjl4nwmuyn7p2d55gzxsn53axwwajlthenaqessmnwzz`\\n\\n_Copy addresses directly from ZigChain explorer_",
 		{
 			parse_mode: "MarkdownV2",
 			reply_markup: keyboards.cancel(),
@@ -158,43 +158,122 @@ export async function handleQuickBuyInput(
 
 	clearUserState(telegramId);
 
-	// Simple validation: check if it looks like a denom or address
-	const denom = text.replace(/\s/g, ""); // Remove all whitespace (newlines, spaces)
-	if (!denom.startsWith("coin.") && !denom.startsWith("factory/")) {
+	// Remove all whitespace (newlines, spaces, tabs)
+	let address = text.replace(/\s/g, "");
+
+	// If user provided full denom format (coin.zig1xxx.tokenname), extract just the address
+	if (address.startsWith("coin.")) {
+		// Extract the zig1... address from coin.zig1xxx.tokenname format
+		const parts = address.split(".");
+		if (parts.length >= 2) {
+			address = parts[1]; // Get the zig1... part
+			console.log(
+				`[Quick Buy] Extracted address from full denom: ${address}`
+			);
+		}
+	}
+
+	// Validation: Must start with "zig"
+	if (!address.startsWith("zig")) {
 		await ctx.reply(
-			"❌ Invalid token format\\. Must start with `coin\\.` or `factory/`\\.",
+			"❌ *Invalid Address*\\n\\nAddress must start with `zig`\\n\\n*Example:*\\n`zig15d0zmcmlmycvywzjl4nwmuyn7p2d55gzxsn53axwwajlthenaqessmnwzz`\\n\\n_Or you can paste the full token denom:_\\n`coin.zig15nes6ctvl8f7tdwdgv5ekgfuv2k54qcq58s7zx5p86rdv2y4vn6qmjlqug.karakchai`",
 			{ parse_mode: "MarkdownV2" }
 		);
 		return;
 	}
 
-	await ctx.reply(`⏳ Buying token \`${denom}\`\\.\\.\\.`, {
-		parse_mode: "MarkdownV2",
-	});
-
-	// Get user settings for buy amount
-	const settings = userRepository.getSnipeSettings(telegramId);
-	if (!settings) {
-		await ctx.reply("❌ Please configure your settings first\\.");
+	// Basic length validation (ZigChain addresses are typically 43+ characters)
+	if (address.length < 40) {
+		await ctx.reply(
+			"❌ *Invalid Address*\\n\\nAddress appears too short\\. Please check and try again\\.",
+			{ parse_mode: "MarkdownV2" }
+		);
 		return;
 	}
 
+	console.log(`[Quick Buy] Address Validated: ${address}`);
+
+	// Store address in state and ask for amount
+	setUserState(telegramId, {
+		action: "quick_buy_amount",
+		data: { address: address },
+	});
+
+	await ctx.reply(
+		"💰 *Enter Buy Amount*\\n\\nPlease enter the amount of ZIG you want to spend\\:\\n\\n*Example:* `10` or `100.5`",
+		{ parse_mode: "MarkdownV2" }
+	);
+}
+
+export async function handleQuickBuyAmountInput(
+	ctx: Context,
+	text: string,
+	data: any
+): Promise<void> {
+	const telegramId = ctx.from?.id;
+	if (!telegramId) return;
+
+	clearUserState(telegramId);
+
+	const address = data?.address;
+	if (!address) {
+		await ctx.reply("❌ Session expired\\. Please start over\\.");
+		return;
+	}
+
+	let amount = parseFloat(text.replace(",", "."));
+	if (isNaN(amount) || amount <= 0) {
+		await ctx.reply(
+			"❌ *Invalid Amount*\\n\\nPlease enter a valid positive number\\.",
+			{ parse_mode: "MarkdownV2" }
+		);
+		return;
+	}
+
+	// Convert ZIG to uZIG
+	const amountUZig = Math.floor(amount * 1_000_000);
+
+	// Escape dots for MarkdownV2
+	const escapedAddress = address.replace(/\./g, "\\.");
+
+	await ctx.reply(
+		`⏳ Buying token \`${escapedAddress}\` with ${amount} ZIG\\.\\.\\.`,
+		{ parse_mode: "MarkdownV2" }
+	);
+
+	// Use the provided amount
 	const result = await sniperService.manualBuy(
 		telegramId,
-		denom,
-		settings.buy_amount_uzig
+		address,
+		amountUZig.toString()
 	);
 
 	if (result.success) {
 		await ctx.reply(
-			`✅ *Buy Successful\\!*\n\n*Token:* \`${denom}\`\n*Amount:* ${settings.buy_amount_uzig} uZIG\n*Tx Hash:* \`${result.txHash}\``,
+			`✅ *Buy Successful\\!*\\n\\n*Token:* \`${escapedAddress}\`\\n*Amount:* ${amount} ZIG\\n*Tx Hash:* \`${result.txHash}\``,
 			{
 				parse_mode: "MarkdownV2",
 			}
 		);
 	} else {
-		await ctx.reply(`❌ *Buy Failed*\n\nError: \`${result.error}\``, {
-			parse_mode: "MarkdownV2",
-		});
+		// Specific help message for "Account does not exist" error
+		let helpText = "";
+		if (
+			result.error &&
+			result.error.includes("does not exist on chain")
+		) {
+			helpText =
+				"\\n\\nℹ️ *Tip:* This error usually means your wallet address has not been initialized on\\-chain\\. Send any amount of ZIG to your wallet address to activate it\\.";
+		}
+
+		const escapedError =
+			result.error?.replace(/\./g, "\\.") || "Unknown error";
+
+		await ctx.reply(
+			`❌ *Buy Failed*\\n\\nError: \`${escapedError}\`${helpText}`,
+			{
+				parse_mode: "MarkdownV2",
+			}
+		);
 	}
 }
