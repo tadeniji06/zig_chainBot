@@ -180,50 +180,9 @@ export class ZigChainService {
 					funds,
 				}),
 			},
-			"/zigchain.dex.MsgSwapExactIn": {
-				aminoType: "zigchain/dex/MsgSwapExactIn",
-				toAmino: ({ sender, poolId, tokenIn, minTokenOut }: any) => ({
-					sender,
-					pool_id: poolId,
-					token_in: tokenIn,
-					min_token_out: minTokenOut,
-				}),
-				fromAmino: ({
-					sender,
-					pool_id,
-					token_in,
-					min_token_out,
-				}: any) => ({
-					sender,
-					poolId: pool_id,
-					tokenIn: token_in,
-					minTokenOut: min_token_out,
-				}),
-			},
-			"/zigchain.dex.MsgSwapExactOut": {
-				aminoType: "zigchain/dex/MsgSwapExactOut",
-				toAmino: ({ sender, poolId, tokenOut, maxTokenIn }: any) => ({
-					sender,
-					pool_id: poolId,
-					token_out: tokenOut,
-					max_token_in: maxTokenIn,
-				}),
-				fromAmino: ({
-					sender,
-					pool_id,
-					token_out,
-					max_token_in,
-				}: any) => ({
-					sender,
-					poolId: pool_id,
-					tokenOut: token_out,
-					maxTokenIn: max_token_in,
-				}),
-			},
 		});
 
-		// Create registry with ZigChain DEX messages from the SDK
-		const { zigchain } = await import("@zigchain/zigchainjs");
+		// Create registry with CosmWasm messages
 		const { MsgExecuteContract } = await import(
 			"cosmjs-types/cosmwasm/wasm/v1/tx"
 		);
@@ -231,14 +190,6 @@ export class ZigChainService {
 		const registry = new Registry([
 			...defaultRegistryTypes,
 			["/cosmwasm.wasm.v1.MsgExecuteContract", MsgExecuteContract],
-			[
-				"/zigchain.dex.MsgSwapExactIn",
-				zigchain.dex.MsgSwapExactIn as any,
-			],
-			[
-				"/zigchain.dex.MsgSwapExactOut",
-				zigchain.dex.MsgSwapExactOut as any,
-			],
 		]);
 
 		return SigningStargateClient.connectWithSigner(
@@ -487,73 +438,6 @@ export class ZigChainService {
 			// If it's a different error, throw it
 			throw error;
 		}
-	}
-
-	async swapExactIn(
-		mnemonic: string,
-		poolId: string,
-		tokenIn: { denom: string; amount: string },
-		minTokenOut: string
-	): Promise<DeliverTxResponse> {
-		const wallet = await this.getSigner(mnemonic);
-		const [account] = await wallet.getAccounts();
-		const client = await this.getSigningClient(mnemonic);
-
-		const msg = {
-			typeUrl: "/zigchain.dex.MsgSwapExactIn",
-			value: {
-				signer: account.address,
-				poolId: poolId,
-				incoming: tokenIn,
-				outgoingMin: {
-					denom: poolId,
-					amount: minTokenOut,
-				},
-			},
-		};
-
-		const result = await client.signAndBroadcast(
-			account.address,
-			[msg],
-			"auto",
-			"ZigChain Sniper Bot"
-		);
-
-		client.disconnect();
-		return result;
-	}
-
-	async swapExactOut(
-		mnemonic: string,
-		poolId: string,
-		tokenOut: { denom: string; amount: string },
-		maxTokenIn: string
-	): Promise<DeliverTxResponse> {
-		const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
-			prefix: config.zigchain.prefix,
-		});
-		const [account] = await wallet.getAccounts();
-		const client = await this.getSigningClient(mnemonic);
-
-		const msg = {
-			typeUrl: "/zigchain.dex.MsgSwapExactOut",
-			value: {
-				sender: account.address,
-				poolId: poolId,
-				tokenOut: tokenOut,
-				maxTokenIn: maxTokenIn,
-			},
-		};
-
-		const result = await client.signAndBroadcast(
-			account.address,
-			[msg],
-			"auto",
-			"ZigChain Sniper Bot - Sell"
-		);
-
-		client.disconnect();
-		return result;
 	}
 
 	async getTokenBalance(
