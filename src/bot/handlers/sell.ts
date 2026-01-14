@@ -176,45 +176,38 @@ export async function handleSellToken(
 			"Sell functionality is temporarily undergoing maintenance. Please try again later."
 		);
 
-		// Mock result to satisfy TS if we didn't throw above
-		const result = {
-			transactionHash: "",
-			code: 1,
-			rawLog: "Maintenance",
-		};
+		/*
+    // Mock result to satisfy TS if we didn't throw above
+    const result = { transactionHash: "", code: 1, rawLog: "Maintenance" };
 
-		transactionRepository.create(
-			telegramId,
-			wallet.address,
-			result.transactionHash,
-			tokenDenom,
-			"sell",
-			sellAmount,
-			result.code === 0 ? "success" : "failed",
-			holding.token_name || undefined,
-			holding.token_symbol || undefined
-		);
+    transactionRepository.create(
+      telegramId,
+      wallet.address,
+      result.transactionHash,
+      tokenDenom,
+      'sell',
+      sellAmount,
+      result.code === 0 ? 'success' : 'failed',
+      holding.token_name || undefined,
+      holding.token_symbol || undefined
+    );
 
-		if (result.code === 0) {
-			await ctx.editMessageText(
-				`✅ Sell Successful!\n\nSold: ${percentage}% of ${
-					holding.token_name || "tokens"
-				}\nAmount: ${sellAmount}\nTX: ${result.transactionHash.slice(
-					0,
-					20
-				)}...`,
-				{
-					reply_markup: keyboards.backToMain(),
-				}
-			);
-		} else {
-			await ctx.editMessageText(
-				`❌ Sell Failed\n\nError: Transaction failed`,
-				{
-					reply_markup: keyboards.backToMain(),
-				}
-			);
-		}
+    if (result.code === 0) {
+      await ctx.editMessageText(
+        `✅ Sell Successful!\n\nSold: ${percentage}% of ${holding.token_name || 'tokens'}\nAmount: ${sellAmount}\nTX: ${result.transactionHash.slice(0, 20)}...`,
+        {
+          reply_markup: keyboards.backToMain(),
+        }
+      );
+    } else {
+      await ctx.editMessageText(
+        `❌ Sell Failed\n\nError: Transaction failed`,
+        {
+          reply_markup: keyboards.backToMain(),
+        }
+      );
+    }
+    */
 	} catch (error) {
 		logger.error("Sell failed", { error, telegramId, tokenDenom });
 		await ctx.editMessageText(

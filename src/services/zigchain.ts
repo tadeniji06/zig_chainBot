@@ -189,7 +189,10 @@ export class ZigChainService {
 
 		const registry = new Registry([
 			...defaultRegistryTypes,
-			["/cosmwasm.wasm.v1.MsgExecuteContract", MsgExecuteContract],
+			[
+				"/cosmwasm.wasm.v1.MsgExecuteContract",
+				MsgExecuteContract as any,
+			],
 		]);
 
 		return SigningStargateClient.connectWithSigner(
