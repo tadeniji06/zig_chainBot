@@ -42,10 +42,42 @@ export class ZigChainService {
 	private rpcClient: StargateClient | null = null;
 	private tendermintClient: Tendermint37Client | null = null;
 
+	// Custom RPC Client to support Bearer Auth Headers
+	private createAuthenticatedRpcClient(
+		url: string,
+		apiKey: string
+	): any {
+		return {
+			execute: async (request: any) => {
+				const response = await fetch(url, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${apiKey}`,
+					},
+					body: JSON.stringify(request),
+				});
+				if (!response.ok) {
+					throw new Error(
+						`RPC request failed: ${response.status} ${response.statusText}`
+					);
+				}
+				return response.json();
+			},
+			disconnect: () => {},
+		};
+	}
+
 	async connect(): Promise<void> {
 		try {
-			this.tendermintClient = await Tendermint37Client.connect(
-				config.zigchain.rpcUrl
+			// Use custom client with headers for Numia RPC
+			const rpcClient = this.createAuthenticatedRpcClient(
+				config.zigchain.rpcUrl,
+				config.zigchain.apiKey
+			);
+
+			this.tendermintClient = await Tendermint37Client.create(
+				rpcClient
 			);
 			this.rpcClient = await StargateClient.create(
 				this.tendermintClient
@@ -195,15 +227,18 @@ export class ZigChainService {
 			],
 		]);
 
-		return SigningStargateClient.connectWithSigner(
+		// Create authenticated TM client for signing
+		const rpcClient = this.createAuthenticatedRpcClient(
 			config.zigchain.rpcUrl,
-			wallet,
-			{
-				gasPrice,
-				aminoTypes: customAminoTypes,
-				registry,
-			}
+			config.zigchain.apiKey
 		);
+		const tmClient = await Tendermint37Client.create(rpcClient);
+
+		return SigningStargateClient.createWithSigner(tmClient, wallet, {
+			gasPrice,
+			aminoTypes: customAminoTypes,
+			registry,
+		});
 	}
 
 	async getPairContract(tokenAddress: string): Promise<string> {
@@ -345,7 +380,12 @@ export class ZigChainService {
 							}/cosmwasm/wasm/v1/contract/${OROSWAP_FACTORY}/smart/${Buffer.from(
 								JSON.stringify(queryMsg)
 							).toString("base64")}`,
-							{ signal: AbortSignal.timeout(10000) }
+							{
+								signal: AbortSignal.timeout(10000),
+								headers: {
+									Authorization: `Bearer ${config.zigchain.apiKey}`,
+								},
+							}
 						);
 
 						if (!response.ok) {
@@ -475,7 +515,12 @@ export class ZigChainService {
 		try {
 			const response = await fetch(
 				`${config.zigchain.apiUrl}/cosmos/bank/v1beta1/supply?pagination.limit=5000`,
-				{ signal: AbortSignal.timeout(10000) } // 10 second timeout
+				{
+					signal: AbortSignal.timeout(10000),
+					headers: {
+						Authorization: `Bearer ${config.zigchain.apiKey}`,
+					},
+				}
 			);
 
 			if (!response.ok) {
@@ -521,7 +566,12 @@ export class ZigChainService {
 		try {
 			const response = await fetch(
 				`${config.zigchain.apiUrl}/cosmos/bank/v1beta1/supply?pagination.limit=5000`,
-				{ signal: AbortSignal.timeout(10000) } // 10 second timeout
+				{
+					signal: AbortSignal.timeout(10000),
+					headers: {
+						Authorization: `Bearer ${config.zigchain.apiKey}`,
+					},
+				}
 			);
 
 			if (!response.ok) {

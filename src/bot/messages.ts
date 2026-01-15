@@ -198,16 +198,30 @@ ${
 		name?: string;
 		symbol?: string;
 		creator: string;
-	}) => `
+	}) => {
+		let contract = token.denom;
+		// Extract contract address from denom: coin.{address}.{symbol}
+		if (
+			token.denom.startsWith("coin.") &&
+			token.denom.includes(".")
+		) {
+			const parts = token.denom.split(".");
+			if (parts.length >= 2) {
+				contract = parts[1];
+			}
+		}
+
+		return `
 🆕 *New Token Detected\\!*
 
 *Name:* ${escapeMarkdown(token.name || "Unknown")}
 *Symbol:* ${escapeMarkdown(token.symbol || "N/A")}
-*Denom:* \`${token.denom.slice(0, 30)}\\.\\.\\.\`
+*Contract:* \`${contract}\`
 *Creator:* \`${token.creator.slice(0, 10)}\\.\\.\\.\`
 
 ⏰ ${escapeMarkdown(new Date().toLocaleTimeString())}
-`,
+`;
+	},
 
 	graduationAlert: (token: {
 		denom: string;

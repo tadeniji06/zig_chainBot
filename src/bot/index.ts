@@ -178,7 +178,20 @@ export function createBot(): Bot {
 		const text = ctx.message.text;
 		const state = getUserState(telegramId);
 
+		// Check for contract address / denom pattern
+		// zig1... (43+ chars) or coin.zig1...
+		const cleanText = text.trim();
+		const isContract =
+			cleanText.startsWith("zig1") && cleanText.length > 30;
+		const isDenom =
+			cleanText.startsWith("coin.") && cleanText.includes("zig1");
+
 		if (!state) {
+			if (isContract || isDenom) {
+				// User pasted a contract. Trigger Quick Buy Flow!
+				await handleQuickBuyInput(ctx, cleanText);
+				return;
+			}
 			return;
 		}
 

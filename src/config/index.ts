@@ -19,10 +19,13 @@ export const config = {
 	zigchain: {
 		rpcUrl:
 			process.env.ZIGCHAIN_RPC_URL ||
-			"https://public-zigchain-rpc.numia.xyz",
+			"https://zigchain-rpc.numia.xyz",
 		apiUrl:
 			process.env.ZIGCHAIN_API_URL ||
-			"https://public-zigchain-lcd.numia.xyz",
+			"https://zigchain-lcd.numia.xyz",
+		apiKey:
+			process.env.NUMIA_API_KEY ||
+			"sk_d7ed7033e7e2488f93dfe2dedcfcc944",
 		chainId: process.env.CHAIN_ID || "zigchain-1",
 		prefix: process.env.BECH32_PREFIX || "zig",
 		gasPrice: process.env.GAS_PRICE || "0.0025uzig",
@@ -44,11 +47,11 @@ export const config = {
 
 	polling: {
 		newTokenInterval: parseInt(
-			process.env.NEW_TOKEN_POLL_INTERVAL || "1000",
+			process.env.NEW_TOKEN_POLL_INTERVAL || "200", // 200ms for super fast detection
 			10
 		),
 		graduationInterval: parseInt(
-			process.env.GRADUATION_POLL_INTERVAL || "2000",
+			process.env.GRADUATION_POLL_INTERVAL || "1000", // 1s for graduation
 			10
 		),
 	},
