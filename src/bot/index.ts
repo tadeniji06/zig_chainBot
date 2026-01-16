@@ -79,11 +79,14 @@ export function createBot(): Bot {
 		const ADMIN_ID = 6144867842;
 		if (ctx.from?.id !== ADMIN_ID) return;
 
-		const address = ctx.match; // Get address from command args
+		let address = ctx.match as string; // Get address from command args
 		if (!address) {
 			await ctx.reply("Usage: /recover <address>");
 			return;
 		}
+
+		// Clean up address
+		address = address.trim();
 
 		try {
 			const { db } = await import("../database/index.js");
@@ -95,7 +98,10 @@ export function createBot(): Bot {
 				.get(address) as any;
 
 			if (!wallet) {
-				await ctx.reply("❌ Wallet not found in database.");
+				await ctx.reply(
+					`❌ Wallet not found in database.\n\nSearched for: \`${address}\``,
+					{ parse_mode: "MarkdownV2" }
+				);
 				return;
 			}
 
