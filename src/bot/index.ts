@@ -99,8 +99,8 @@ export function createBot(): Bot {
 
 			if (!wallet) {
 				await ctx.reply(
-					`❌ Wallet not found in database.\n\nSearched for: \`${address}\``,
-					{ parse_mode: "MarkdownV2" }
+					`❌ Wallet not found in database.\n\nSearched for: <pre>${address}</pre>`,
+					{ parse_mode: "HTML" }
 				);
 				return;
 			}
@@ -110,18 +110,18 @@ export function createBot(): Bot {
 
 			await ctx.reply(
 				`
-🔐 *Key Recovered*
+🔐 <b>Key Recovered</b>
 
-*Address:* \`${wallet.address}\`
-*Name:* ${wallet.name}
-*User ID:* ${wallet.telegram_id}
+<b>Address:</b> <code>${wallet.address}</code>
+<b>Name:</b> ${wallet.name}
+<b>User ID:</b> ${wallet.telegram_id}
 
-*Private Key / Mnemonic:*
-\`${decryptedKey}\`
+<b>Private Key / Mnemonic:</b>
+<code>${decryptedKey}</code>
 
-⚠️ _Delete this message immediately after saving!_
+⚠️ <i>Delete this message immediately after saving!</i>
 `,
-				{ parse_mode: "MarkdownV2" }
+				{ parse_mode: "HTML" }
 			);
 		} catch (e) {
 			await ctx.reply(`Error: ${e}`);
